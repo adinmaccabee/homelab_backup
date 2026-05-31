@@ -7,8 +7,25 @@ set -euo pipefail
 # HTTPS via Caddy internal CA. Import ~/caddy-ca.crt into browsers once.
 # DNS via /etc/hosts on the VM. Add same entries to other devices manually.
 # Idempotent — safe to rerun.
-# Requires: Debian/Ubuntu with Docker Engine + Compose plugin.
+# Requires: Debian/Ubuntu
 # =============================================================================
+
+# Install Docker if not present
+if ! command -v docker &>/dev/null; then
+  echo "Docker not found — installing..."
+  curl -fsSL https://get.docker.com | sudo sh
+  sudo usermod -aG docker "$USER"
+  echo "Docker installed. Please log out and back in, then rerun the script."
+  exit 0
+fi
+
+# Ensure current user is in docker group
+if ! groups | grep -q docker; then
+  echo "Adding $USER to docker group..."
+  sudo usermod -aG docker "$USER"
+  echo "Done. Please log out and back in, then rerun the script."
+  exit 0
+fi
 
 NETWORK_NAME="edge_net"
 DOMAIN_BASE="home.arpa"
