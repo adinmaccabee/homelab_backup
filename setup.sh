@@ -13,9 +13,16 @@ if ! id -nG "$(whoami)" | grep -qw sudo; then
     fi
 fi
 
-echo 
+# sudo
+sudo -v
+# Keep sudo alive in the background for the duration of the script
+( while true; do sudo -n true; sleep 50; done ) &
+SUDO_KEEPALIVE_PID=$!
+trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
 echo "Installing:"
 echo "  Docker"
+echo ""
+
 
 # update & install packages
 sudo apt update
