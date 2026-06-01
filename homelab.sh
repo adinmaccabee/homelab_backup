@@ -21,6 +21,7 @@ if sudo ss -ulnp | grep -q ':53 '; then
   sudo rm -f /etc/resolv.conf
   echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf >/dev/null
 fi
+NETWORK_NAME="edge_net"
 DOMAIN_BASE="home.arpa"
 
 AUTH_DIR="$HOME/authentik-stack"
@@ -72,7 +73,9 @@ mkdir -p "$CADDY_DIR"
 
 # Pre-load saved secrets so re-runs don't re-prompt.
 # shellcheck disable=SC1090
+set +u
 [ -f "$ENV_FILE" ] && source "$ENV_FILE" || true
+set -u
 
 # ---------------------------------------------------------------------------
 # Caddy reverse proxy config
