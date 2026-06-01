@@ -23,9 +23,13 @@ if sudo ss -ulnp | grep -q ':53 '; then
 fi
 NETWORK_NAME="edge_net"
 
-# Prompt for domain
-read -rp "Domain [home.arpa]: " _domain
-DOMAIN_BASE="${_domain:-home.arpa}"
+# Prompt for domain only if running interactively
+if [ -t 0 ]; then
+  read -rp "Domain [home.arpa]: " _domain
+  DOMAIN_BASE="${_domain:-home.arpa}"
+else
+  DOMAIN_BASE="home.arpa"
+fi
 
 AUTH_DIR="$HOME/authentik-stack"
 MATRIX_DIR="$HOME/matrix-stack"
