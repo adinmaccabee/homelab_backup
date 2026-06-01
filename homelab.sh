@@ -10,7 +10,17 @@ set -euo pipefail
 # Requires: Debian/Ubuntu with Docker Engine + Compose plugin.
 # =============================================================================
 
-NETWORK_NAME="edge_net"
+# Install dependencies
+for pkg in jq curl; do
+  command -v "$pkg" &>/dev/null || sudo apt-get install -y "$pkg"
+done
+
+# Free up port 53 for dnsmasq (systemd-resolved may be using it)
+if sudo ss -ulnp | grep -q ':53 '; then
+  sudo systemctl disable --now systemd-resolved 2>/dev/null || true
+  sudo rm -f /etc/resolv.conf
+  echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf >/dev/null
+fi
 DOMAIN_BASE="home.arpa"
 
 AUTH_DIR="$HOME/authentik-stack"
@@ -1427,45 +1437,6 @@ else
 fi
 
 # ---------------------------------------------------------------------------
-# 8e. Clone / update mailcow-ldap
-# ---------------------------------------------------------------------------
-if [ ! -d "$MAILCOW_DIR/mailcow-ldap" ]; then
-  echo "==> Cloning mailcow-ldap addon..."
-  git clone https://github.com/Programmierus/ldap-mailcow.git "$MAILCOW_DIR/mailcow-ldap"
-else
-  echo "==> mailcow-ldap already cloned, pulling latest..."
-  (cd "$MAILCOW_DIR/mailcow-ldap" && git pull --ff-only) || true
-fi
-
-# ---------------------------------------------------------------------------
-# 8f. Write mailcow-ldap docker-compose
-# Uses the container name (authentik-ldap) so Docker DNS resolves it —
-# no need to look up an IP that may not exist yet.
-# ---------------------------------------------------------------------------
-cat > "$MAILCOW_DIR/mailcow-ldap/docker-compose.yml" <<EOF
-services:
-  ldap-mailcow:
-    image: programmierus/ldap-mailcow:latest
-    container_name: ldap-mailcow
-    restart: unless-stopped
-    networks:
-      - ${NETWORK_NAME}
-    environment:
-      LDAP-MAILCOW_LDAP_URI: ldap://authentik-ldap:3389
-      LDAP-MAILCOW_LDAP_BASE_DN: ${LDAP_BASE_DN}
-      LDAP-MAILCOW_LDAP_BIND_DN: cn=akadmin,${LDAP_BASE_DN}
-      LDAP-MAILCOW_LDAP_BIND_DN_PASSWORD: ${AUTHENTIK_BOOTSTRAP_PASSWORD}
-      LDAP-MAILCOW_API_HOST: http://172.17.0.1:8080
-      LDAP-MAILCOW_API_KEY: REPLACE_WITH_MAILCOW_API_KEY
-      LDAP-MAILCOW_SYNC_INTERVAL: "300"
-      LDAP-MAILCOW_FILTER: "(|(memberOf=cn=mailcow-users,${LDAP_BASE_DN}))"
-      LOG_LEVEL: INFO
-
-networks:
-  ${NETWORK_NAME}:
-    external: true
-EOF
-
 # ---------------------------------------------------------------------------
 # 8g. Start Mailcow
 # ---------------------------------------------------------------------------
@@ -1549,15 +1520,30 @@ if echo "$TEST" | grep -qE '^\{|^\['; then
     echo "==> Domain already present in Mailcow."
   fi
 
-  # Start LDAP sync
-  echo "==> Starting LDAP sync..."
-  sed -i "s|LDAP-MAILCOW_API_KEY: REPLACE_WITH_MAILCOW_API_KEY|LDAP-MAILCOW_API_KEY: ${MAILCOW_API_KEY}|" \
-    "$MAILCOW_DIR/mailcow-ldap/docker-compose.yml"
-  (cd "$MAILCOW_DIR/mailcow-ldap" && docker compose up -d)
-  echo "==> LDAP sync started."
-
-  # Note: mailcow OIDC SSO login is not currently supported in the UI.
-  # Users log in via LDAP credentials synced from Authentik.
+  # Configure mailcow built-in LDAP
+  MYSQL_PASS=$(grep "DBPASS=" "$MAILCOW_DIR/mailcow-dockerized/mailcow.conf" | cut -d= -f2)
+  docker exec mailcowdockerized-mysql-mailcow-1 mysql -u mailcow -p"${MYSQL_PASS}" mailcow -e "
+    DELETE FROM identity_provider;
+    INSERT INTO identity_provider (\`key\`, \`value\`) VALUES
+      ('authsource',        'LDAP'),
+      ('host',              'authentik-ldap'),
+      ('port',              '3389'),
+      ('basedn',            '${LDAP_BASE_DN}'),
+      ('username_field',    'mail'),
+      ('filter',            '(memberOf=cn=mailcow-users,${LDAP_BASE_DN})'),
+      ('attribute_field',   ''),
+      ('binddn',            'cn=akadmin,${LDAP_BASE_DN}'),
+      ('bindpass',          '${AUTHENTIK_BOOTSTRAP_PASSWORD}'),
+      ('periodic_sync',     '1'),
+      ('import_users',      '1'),
+      ('sync_interval',     '15'),
+      ('use_ssl',           '0'),
+      ('use_tls',           '0'),
+      ('ignore_ssl_error',  '0'),
+      ('login_provisioning','0'),
+      ('access_token',      '');
+  " 2>/dev/null && echo "Mailcow LDAP configured." || \
+    echo "WARNING: Mailcow LDAP DB insert failed — configure manually via ${MAIL_URL}/admin"
 else
   echo "WARNING: Mailcow API key verification failed (unexpected response)."
   echo "         Response: ${TEST}"
