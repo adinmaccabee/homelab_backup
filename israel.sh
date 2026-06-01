@@ -108,6 +108,11 @@ print('Authentik done.')
 # =============================================================================
 echo ""
 echo "Getting Jacob's Matrix token..."
+
+# Force Jacob's Matrix account creation via MAS
+docker exec mas mas-cli manage provision-user jacob 2>/dev/null || true
+sleep 2
+
 JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
   --yes-i-want-to-grant-synapse-admin-privileges jacob 2>&1 | \
   grep -o 'mct_[A-Za-z0-9_-]*' | head -1 || true)
@@ -153,7 +158,7 @@ create_room() {
   local existing
   existing=$(get_room_id "$alias")
   if [ -n "$existing" ]; then
-    echo "  Exists: #${alias} (${existing})"
+    echo "  Exists: #${alias} (${existing})" >&2
     echo "$existing"
     return 0
   fi
@@ -163,10 +168,10 @@ create_room() {
   local room_id
   room_id=$(echo "$result" | grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true)
   if [ -n "$room_id" ]; then
-    echo "  Created: #${alias} (${room_id})"
+    echo "  Created: #${alias} (${room_id})" >&2
     echo "$room_id"
   else
-    echo "  Failed: ${alias} — $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)"
+    echo "  Failed: ${alias} — $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)" >&2
     echo ""
   fi
 }
@@ -187,8 +192,7 @@ invite_user() {
 
 pre_create_account() {
   local username="$1"
-  docker exec mas mas-cli manage issue-compatibility-token "$username" \
-    2>&1 | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
+  docker exec mas mas-cli manage provision-user "$username" 2>/dev/null || true
   sleep 1
 }
 
