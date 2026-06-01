@@ -101,6 +101,20 @@ print('Authentik done.')
 echo ""
 echo "Getting Jacob's Matrix token..."
 
+# Create jacob's Synapse account directly if it doesn't exist yet.
+# We need a bootstrap token first — use the MAS admin token from synapse config.
+MAS_ADMIN_TOKEN=$(sudo grep 'admin_token' ~/matrix-stack/synapse-config/homeserver.yaml \
+  2>/dev/null | head -1 | awk '{print $2}' || true)
+
+if [ -n "$MAS_ADMIN_TOKEN" ]; then
+  curl -sk -X PUT \
+    "https://matrix.${DOMAIN}/_synapse/admin/v2/users/@jacob:${DOMAIN}" \
+    -H "Authorization: Bearer ${MAS_ADMIN_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d '{"displayname":"Jacob (Israel)","admin":true}' 2>/dev/null >/dev/null
+  sleep 2
+fi
+
 JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
   --yes-i-want-to-grant-synapse-admin-privileges jacob 2>&1 | \
   grep -o 'mct_[A-Za-z0-9_-]*' | head -1 || true)
