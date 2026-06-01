@@ -1527,6 +1527,9 @@ if echo "$TEST" | grep -qE '^\{|^\['; then
   fi
 
   # Configure mailcow built-in LDAP
+  # Connect authentik-ldap to mailcow network so mailcow PHP can reach it
+  docker network connect mailcowdockerized_mailcow-network authentik-ldap 2>/dev/null || true
+
   MYSQL_PASS=$(grep "DBPASS=" "$MAILCOW_DIR/mailcow-dockerized/mailcow.conf" | cut -d= -f2)
   docker exec mailcowdockerized-mysql-mailcow-1 mysql -u mailcow -p"${MYSQL_PASS}" mailcow -e "
     DELETE FROM identity_provider;
