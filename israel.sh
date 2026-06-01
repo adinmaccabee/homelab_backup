@@ -110,7 +110,8 @@ echo ""
 echo "Getting Jacob's Matrix token..."
 
 # Force Jacob's Matrix account creation via MAS
-docker exec mas mas-cli manage provision-user jacob 2>/dev/null || true
+docker exec mas mas-cli manage register-user --username jacob \
+  --display-name "Jacob (Israel)" 2>/dev/null || true
 sleep 2
 
 JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
@@ -192,7 +193,7 @@ invite_user() {
 
 pre_create_account() {
   local username="$1"
-  docker exec mas mas-cli manage provision-user "$username" 2>/dev/null || true
+  docker exec mas mas-cli manage register-user --username "$username" 2>/dev/null || true
   sleep 1
 }
 
