@@ -93,7 +93,7 @@ with transaction.atomic():
             tribe_group.users.add(clan_user)
             israel_group.users.add(clan_user)
 print('Authentik done.')
-" 2>/dev/null | grep -v '^{'
+" 2>/dev/null | grep -v '^{' || true
 
 # =============================================================================
 # 2. Matrix rooms — requires jacob to have logged in via Element first
