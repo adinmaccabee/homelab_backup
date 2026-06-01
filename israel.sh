@@ -109,8 +109,8 @@ print('Authentik done.')
 echo ""
 echo "Getting Jacob's Matrix token..."
 JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
-  --yes-i-want-to-grant-synapse-admin-privileges jacob 2>/dev/null | \
-  grep -o 'mct_[^ ]*' | head -1 || true)
+  --yes-i-want-to-grant-synapse-admin-privileges jacob 2>&1 | \
+  grep -o 'mct_[A-Za-z0-9_-]*' | head -1 || true)
 
 if [ -z "$JACOB_TOKEN" ]; then
   echo "ERROR: Could not get Jacob's Matrix token. Aborting Matrix setup."
@@ -188,7 +188,7 @@ invite_user() {
 pre_create_account() {
   local username="$1"
   docker exec mas mas-cli manage issue-compatibility-token "$username" \
-    2>/dev/null | grep -o 'mct_[^ ]*' >/dev/null || true
+    2>&1 | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
   sleep 1
 }
 
