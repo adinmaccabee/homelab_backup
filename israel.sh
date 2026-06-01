@@ -99,35 +99,25 @@ print('Authentik done.')
 # 2. Matrix rooms — requires jacob to have logged in via Element first
 # =============================================================================
 echo ""
-echo "Getting Jacob's Matrix token..."
+echo "Getting Matrix admin token..."
 
-# Create jacob's Synapse account directly if it doesn't exist yet.
-# We need a bootstrap token first — use the MAS admin token from synapse config.
-MAS_ADMIN_TOKEN=$(sudo grep 'admin_token' ~/matrix-stack/synapse-config/homeserver.yaml \
-  2>/dev/null | head -1 | awk '{print $2}' || true)
+# Get the MAS admin token from the synapse config — this works directly with Synapse admin API
+JACOB_TOKEN=$(docker exec synapse cat /data/homeserver.yaml 2>/dev/null | \
+  grep 'admin_token' | head -1 | awk '{print $2}' | tr -d '"' || true)
 
-if [ -n "$MAS_ADMIN_TOKEN" ]; then
+# Create jacob's Synapse account if it doesn't exist
+if [ -n "$JACOB_TOKEN" ]; then
   curl -sk -X PUT \
     "https://matrix.${DOMAIN}/_synapse/admin/v2/users/@jacob:${DOMAIN}" \
-    -H "Authorization: Bearer ${MAS_ADMIN_TOKEN}" \
+    -H "Authorization: Bearer ${JACOB_TOKEN}" \
     -H "Content-Type: application/json" \
     -d '{"displayname":"Jacob (Israel)","admin":true}' 2>/dev/null >/dev/null
-  sleep 2
+  sleep 1
 fi
 
-JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
-  --yes-i-want-to-grant-synapse-admin-privileges jacob 2>&1 | \
-  grep -o 'mct_[A-Za-z0-9_-]*' | head -1 || true)
-
 if [ -z "$JACOB_TOKEN" ]; then
-  echo ""
-  echo "Jacob has no Matrix account yet — log in to Element as jacob first,"
-  echo "then rerun this script to create rooms and add members."
-  echo ""
-  echo "Done (Authentik only)."
-  echo "  Superadmin : jacob@${DOMAIN}  (password: ChangeMeNow!)"
-  echo "  Change passwords at: https://auth.${DOMAIN}"
-  exit 0
+  echo "ERROR: Could not get Matrix admin token from Synapse config."
+  exit 1
 fi
 echo "  Token obtained."
 
