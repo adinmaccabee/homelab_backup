@@ -190,12 +190,16 @@ echo "Pre-creating Matrix accounts..."
 
 synapse_create_user() {
   local username="$1"
-  curl -sk -X PUT \
+  local result
+  result=$(curl -sk -X PUT \
     "https://matrix.${DOMAIN}/_synapse/admin/v2/users/@${username}:${DOMAIN}" \
     -H "Authorization: Bearer ${JACOB_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d "{\"displayname\":\"${username}\",\"admin\":false}" 2>/dev/null >/dev/null
-  sleep 0.5
+    -d "{\"displayname\":\"${username}\",\"admin\":false}" 2>/dev/null)
+  if ! echo "$result" | grep -q '"name"'; then
+    echo "    WARNING: Failed to create ${username}: $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)" >&2
+  fi
+  sleep 1
 }
 
 ALL_USERS="reuben simeon levi judah dan naphtali gad asher issachar zebulun joseph benjamin
