@@ -50,7 +50,7 @@ with transaction.atomic():
     israel_group, _ = Group.objects.get_or_create(name='Israel')
     jacob, created = User.objects.get_or_create(
         username='jacob',
-        defaults={'name':'Jacob (Israel)','email':f'jacob@{DOMAIN}','is_active':True}
+        defaults={'name':'Jacob','email':f'jacob@{DOMAIN}','is_active':True}
     )
     if created:
         jacob.set_password('ChangeMeNow!')
@@ -111,7 +111,7 @@ if [ -n "$JACOB_TOKEN" ]; then
     "https://matrix.${DOMAIN}/_synapse/admin/v2/users/@jacob:${DOMAIN}" \
     -H "Authorization: Bearer ${JACOB_TOKEN}" \
     -H "Content-Type: application/json" \
-    -d '{"displayname":"Jacob (Israel)","admin":true}' 2>/dev/null >/dev/null
+    -d '{"displayname":"Jacob","admin":true}' 2>/dev/null >/dev/null
   sleep 1
 fi
 
