@@ -194,7 +194,7 @@ invite_user() {
 pre_create_account() {
   local username="$1"
   docker exec mas mas-cli manage register-user --yes "$username" 2>/dev/null || true
-  sleep 1
+  sleep 2
 }
 
 # =============================================================================
@@ -221,6 +221,9 @@ for USER in $ALL_USERS; do
   pre_create_account "$USER"
   printf "  %s\n" "$USER"
 done
+
+echo "Waiting for Synapse to register all accounts..."
+sleep 15
 
 # =============================================================================
 # 4. Create rooms and invite members
