@@ -22,7 +22,10 @@ if sudo ss -ulnp | grep -q ':53 '; then
   echo "nameserver 1.1.1.1" | sudo tee /etc/resolv.conf >/dev/null
 fi
 NETWORK_NAME="edge_net"
-DOMAIN_BASE="home.arpa"
+
+# Prompt for domain
+read -rp "Domain [home.arpa]: " _domain
+DOMAIN_BASE="${_domain:-home.arpa}"
 
 AUTH_DIR="$HOME/authentik-stack"
 MATRIX_DIR="$HOME/matrix-stack"
