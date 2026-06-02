@@ -113,6 +113,16 @@ if [ -z "$ADMIN_TOKEN" ]; then
   echo "ERROR: Could not get Synapse admin token."
   exit 1
 fi
+
+# Get jacob's token for room creation so jacob appears as creator
+JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
+  --yes-i-want-to-grant-synapse-admin-privileges jacob 2>&1 | \
+  grep -o 'mct_[A-Za-z0-9_-]*' | head -1 || true)
+
+if [ -z "$JACOB_TOKEN" ]; then
+  echo "  Jacob has no Matrix account yet — using admin token for room creation"
+  JACOB_TOKEN="$ADMIN_TOKEN"
+fi
 echo "  Token obtained."
 
 # =============================================================================
@@ -152,7 +162,6 @@ get_room_id() {
 
 create_room() {
   local alias="$1" name="$2"
-  # Try to get existing room ID via Synapse admin API
   local existing
   existing=$(curl -sk \
     "https://matrix.${DOMAIN}/_synapse/admin/v1/rooms?search_term=${alias}" \
@@ -164,8 +173,10 @@ create_room() {
     return 0
   fi
   local result room_id
-  result=$(matrix_api POST "/_matrix/client/v3/createRoom" \
-    "{\"room_alias_name\":\"${alias}\",\"name\":\"${name}\",\"preset\":\"private_chat\"}")
+  result=$(curl -sk -X POST "https://matrix.${DOMAIN}/_matrix/client/v3/createRoom" \
+    -H "Authorization: Bearer ${JACOB_TOKEN}" \
+    -H "Content-Type: application/json" \
+    -d "{\"room_alias_name\":\"${alias}\",\"name\":\"${name}\",\"preset\":\"private_chat\"}" 2>/dev/null)
   room_id=$(echo "$result" | grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true)
   if [ -n "$room_id" ]; then
     echo "  Created: #${alias}" >&2
@@ -218,16 +229,6 @@ for USER in $ALL_USERS; do
   printf "  %s\n" "$USER"
 done
 
-# Issue compatibility tokens for all users to register them in Synapse
-echo ""
-echo "Registering all users in Synapse..."
-for USER in $ALL_USERS; do
-  docker exec mas mas-cli manage issue-compatibility-token "$USER" \
-    2>/dev/null | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
-done
-echo "Waiting for Synapse to process..."
-sleep 15
-
 # =============================================================================
 # 4. Create rooms and add members
 # =============================================================================
@@ -249,28 +250,47 @@ TRIBE_CLANS[Joseph]="manasseh ephraim"
 TRIBE_CLANS[Benjamin]="bela beker ashbel gera naaman ehi rosh muppim huppim ard"
 
 ISRAEL_ROOM_ID=$(create_room "israel" "Israel")
-# Always join jacob to Israel room
-force_join "$ISRAEL_ROOM_ID" "jacob" || true
 
 for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Joseph Benjamin; do
   ALIAS="tribe-of-$(echo "$TRIBE" | tr '[:upper:]' '[:lower:]')"
   SON="$(echo "$TRIBE" | tr '[:upper:]' '[:lower:]')"
-  ROOM_ID=$(create_room "$ALIAS" "Tribe of ${TRIBE}")
-
-  if [ -n "$ROOM_ID" ]; then
-    force_join "$ROOM_ID" "jacob" || true
-    force_join "$ROOM_ID" "$SON" || true
-    set_power_level "$ROOM_ID" "$SON" || true
-    for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
-      force_join "$ROOM_ID" "$CLAN_MEMBER" || true
-    done
-    force_join "$ISRAEL_ROOM_ID" "$SON" || true
-    for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
-      force_join "$ISRAEL_ROOM_ID" "$CLAN_MEMBER" || true
-    done
-    sleep 2
-  fi
+  create_room "$ALIAS" "Tribe of ${TRIBE}" >/dev/null
 done
+
+# Issue all compatibility tokens upfront so Synapse knows about everyone
+echo ""
+echo "Registering all users in Synapse..."
+for USER in $ALL_USERS; do
+  docker exec mas mas-cli manage issue-compatibility-token "$USER" \
+    2>/dev/null | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
+done
+echo "Waiting for Synapse to process..."
+sleep 15
+
+# Now join everyone to their rooms
+echo ""
+echo "Populating rooms..."
+for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Joseph Benjamin; do
+  ALIAS="tribe-of-$(echo "$TRIBE" | tr '[:upper:]' '[:lower:]')"
+  SON="$(echo "$TRIBE" | tr '[:upper:]' '[:lower:]')"
+  ROOM_ID=$(curl -sk "https://matrix.${DOMAIN}/_synapse/admin/v1/rooms?search_term=${ALIAS}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" | grep -o '"room_id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
+  [ -z "$ROOM_ID" ] && continue
+
+  force_join "$ROOM_ID" "jacob" || true
+  force_join "$ROOM_ID" "$SON" || true
+  set_power_level "$ROOM_ID" "$SON" || true
+  for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
+    force_join "$ROOM_ID" "$CLAN_MEMBER" || true
+  done
+
+  force_join "$ISRAEL_ROOM_ID" "$SON" || true
+  for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
+    force_join "$ISRAEL_ROOM_ID" "$CLAN_MEMBER" || true
+  done
+  echo "  Tribe of ${TRIBE} done"
+done
+force_join "$ISRAEL_ROOM_ID" "jacob" || true
 
 echo ""
 echo "Done."
