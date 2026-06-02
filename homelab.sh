@@ -891,6 +891,7 @@ upstream_oauth2:
       client_secret: "${MAS_OIDC_CLIENT_SECRET}"
       token_endpoint_auth_method: client_secret_basic
       scope: "openid profile email"
+      account_linking_policy: allow
       discovery_mode: disabled
       authorization_endpoint: "${AUTH_URL}/application/o/authorize/"
       token_endpoint: "http://authentik-server:9000/application/o/token/"
