@@ -1,7 +1,11 @@
 #!/usr/bin/env bash
 # =============================================================================
 # israel.sh — Create the 12 Tribes of Israel + clans in Authentik
-#             and Matrix rooms per tribe (run after homelab.sh)
+#             and Matrix rooms per tribe.
+#
+# Run ONCE after homelab.sh to set up Authentik users/groups.
+# Run AGAIN after users have logged in to Element to populate rooms.
+#
 # Usage: ./israel.sh [domain]
 # =============================================================================
 set -euo pipefail
@@ -18,6 +22,7 @@ echo "Using domain: ${DOMAIN}"
 # =============================================================================
 # 1. Authentik users and groups
 # =============================================================================
+echo ""
 echo "Setting up Authentik users and groups..."
 
 docker exec authentik-server ak shell -c "
@@ -96,27 +101,16 @@ print('Authentik done.')
 " 2>/dev/null | grep -v '^{' || true
 
 # =============================================================================
-# 2. Matrix rooms — requires jacob to have logged in via Element first
+# 2. Matrix rooms and members
 # =============================================================================
 echo ""
 echo "Getting Matrix admin token..."
 
-# Get the MAS admin token from the synapse config — this works directly with Synapse admin API
-JACOB_TOKEN=$(docker exec synapse cat /data/homeserver.yaml 2>/dev/null | \
+ADMIN_TOKEN=$(docker exec synapse cat /data/homeserver.yaml 2>/dev/null | \
   grep 'admin_token' | head -1 | awk '{print $2}' | tr -d '"' || true)
 
-# Create jacob's Synapse account if it doesn't exist
-if [ -n "$JACOB_TOKEN" ]; then
-  curl -sk -X PUT \
-    "https://matrix.${DOMAIN}/_synapse/admin/v2/users/@jacob:${DOMAIN}" \
-    -H "Authorization: Bearer ${JACOB_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d '{"displayname":"Jacob","admin":true}' 2>/dev/null >/dev/null
-  sleep 1
-fi
-
-if [ -z "$JACOB_TOKEN" ]; then
-  echo "ERROR: Could not get Matrix admin token from Synapse config."
+if [ -z "$ADMIN_TOKEN" ]; then
+  echo "ERROR: Could not get Synapse admin token."
   exit 1
 fi
 echo "  Token obtained."
@@ -124,13 +118,19 @@ echo "  Token obtained."
 # =============================================================================
 # Helpers
 # =============================================================================
-matrix_post() {
-  local path="$1" data="$2" result retries=5
+matrix_api() {
+  local method="$1" path="$2" data="${3:-}"
+  local result retries=5
   for i in $(seq 1 $retries); do
-    result=$(curl -sk -X POST "https://matrix.${DOMAIN}${path}" \
-      -H "Authorization: Bearer ${JACOB_TOKEN}" \
-      -H "Content-Type: application/json" \
-      -d "$data" 2>/dev/null)
+    if [ -n "$data" ]; then
+      result=$(curl -sk -X "$method" "https://matrix.${DOMAIN}${path}" \
+        -H "Authorization: Bearer ${ADMIN_TOKEN}" \
+        -H "Content-Type: application/json" \
+        -d "$data" 2>/dev/null)
+    else
+      result=$(curl -sk -X "$method" "https://matrix.${DOMAIN}${path}" \
+        -H "Authorization: Bearer ${ADMIN_TOKEN}" 2>/dev/null)
+    fi
     if echo "$result" | grep -q 'M_LIMIT_EXCEEDED'; then
       local ms
       ms=$(echo "$result" | grep -o '"retry_after_ms":[0-9]*' | cut -d: -f2 || echo 3000)
@@ -143,66 +143,67 @@ matrix_post() {
 }
 
 get_room_id() {
-  curl -sk "https://matrix.${DOMAIN}/_matrix/client/v3/directory/room/%23${1}:${DOMAIN}" \
-    -H "Authorization: Bearer ${JACOB_TOKEN}" 2>/dev/null | \
-    grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true
+  local alias="$1"
+  # Try Synapse admin API first
+  local result
+  result=$(matrix_api GET "/_synapse/admin/v1/room_aliases?limit=1&from=0&search_term=${alias}")
+  echo "$result" | grep -o '"room_id":"[^"]*"' | head -1 | cut -d'"' -f4 || true
 }
 
 create_room() {
-  local alias="$1" name="$2" existing room_id result
-  existing=$(get_room_id "$alias")
+  local alias="$1" name="$2"
+  # Check if alias already exists
+  local existing
+  existing=$(curl -sk "https://matrix.${DOMAIN}/_matrix/client/v3/directory/room/%23${alias}:${DOMAIN}" \
+    -H "Authorization: Bearer ${ADMIN_TOKEN}" 2>/dev/null | \
+    grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true)
   if [ -n "$existing" ]; then
-    echo "  Exists: #${alias}" >&2; echo "$existing"; return 0
+    echo "  Exists: #${alias}" >&2
+    echo "$existing"
+    return 0
   fi
-  result=$(matrix_post "/_matrix/client/v3/createRoom" \
+  local result room_id
+  result=$(matrix_api POST "/_matrix/client/v3/createRoom" \
     "{\"room_alias_name\":\"${alias}\",\"name\":\"${name}\",\"preset\":\"private_chat\"}")
   room_id=$(echo "$result" | grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true)
   if [ -n "$room_id" ]; then
-    echo "  Created: #${alias}" >&2; echo "$room_id"
+    echo "  Created: #${alias}" >&2
+    echo "$room_id"
   else
     echo "  Failed: ${alias} — $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)" >&2
     echo ""
   fi
 }
 
-# Use Synapse admin force-join — works for users who haven't logged in yet
 force_join() {
-  local room_id="$1" username="$2" result err
+  local room_id="$1" username="$2"
   [ -z "$room_id" ] && return 0
-  result=$(curl -sk -X POST \
-    "https://matrix.${DOMAIN}/_synapse/admin/v1/join/${room_id}" \
-    -H "Authorization: Bearer ${JACOB_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{\"user_id\":\"@${username}:${DOMAIN}\"}" 2>/dev/null)
+  local result err
+  result=$(matrix_api POST "/_synapse/admin/v1/join/${room_id}" \
+    "{\"user_id\":\"@${username}:${DOMAIN}\"}")
   if echo "$result" | grep -q '"errcode"'; then
     err=$(echo "$result" | grep -o '"errcode":"[^"]*"' | cut -d'"' -f4)
-    echo "    Note: ${username} — ${err}" >&2
+    # M_UNKNOWN = user doesn't exist yet in Matrix (hasn't logged in)
+    [ "$err" != "M_UNKNOWN" ] && echo "    Note: ${username} — ${err}" >&2
   fi
 }
 
+set_power_level() {
+  local room_id="$1" son="$2"
+  [ -z "$room_id" ] && return 0
+  matrix_api PUT "/_matrix/client/v3/rooms/${room_id}/state/m.room.power_levels" \
+    "{\"users\":{\"@jacob:${DOMAIN}\":100,\"@${son}:${DOMAIN}\":100}}" >/dev/null 2>/dev/null || true
+}
+
 # =============================================================================
-# 3. Pre-create all Matrix accounts via Synapse admin API
-# This creates accounts directly in Synapse without going through MAS,
-# so it doesn't conflict with Authentik login later.
+# 3. Pre-create all Matrix accounts via MAS register-user
+#    account_linking_policy: allow in mas-config means Authentik login will
+#    link to these accounts instead of failing.
 # =============================================================================
 echo ""
 echo "Pre-creating Matrix accounts..."
 
-synapse_create_user() {
-  local username="$1"
-  local result
-  result=$(curl -sk -X PUT \
-    "https://matrix.${DOMAIN}/_synapse/admin/v2/users/@${username}:${DOMAIN}" \
-    -H "Authorization: Bearer ${JACOB_TOKEN}" \
-    -H "Content-Type: application/json" \
-    -d "{\"displayname\":\"${username}\",\"admin\":false}" 2>/dev/null)
-  if ! echo "$result" | grep -q '"name"'; then
-    echo "    WARNING: Failed to create ${username}: $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)" >&2
-  fi
-  sleep 1
-}
-
-ALL_USERS="reuben simeon levi judah dan naphtali gad asher issachar zebulun joseph benjamin
+ALL_USERS="jacob reuben simeon levi judah dan naphtali gad asher issachar zebulun joseph benjamin
 hanoch pallu hezron_r carmi jemuel jamin ohad jakin zohar shaul
 gershon kohath merari er onan shelah perez zerah hushim
 jahzeel guni jezer shillem zephon haggi shuni ezbon eri arodi areli
@@ -211,9 +212,10 @@ sered elon jahleel manasseh ephraim
 bela beker ashbel gera naaman ehi rosh muppim huppim ard"
 
 for USER in $ALL_USERS; do
-  synapse_create_user "$USER"
+  docker exec mas mas-cli manage register-user --yes "$USER" 2>/dev/null || true
   printf "  %s\n" "$USER"
 done
+sleep 5
 
 # =============================================================================
 # 4. Create rooms and add members
@@ -243,15 +245,11 @@ for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Jo
   ROOM_ID=$(create_room "$ALIAS" "Tribe of ${TRIBE}")
 
   if [ -n "$ROOM_ID" ]; then
-    # Force-join the son and give admin
     force_join "$ROOM_ID" "$SON"
-    matrix_post "/_matrix/client/v3/rooms/${ROOM_ID}/state/m.room.power_levels" \
-      "{\"users\":{\"@jacob:${DOMAIN}\":100,\"@${SON}:${DOMAIN}\":100}}" >/dev/null
-    # Force-join clan members
+    set_power_level "$ROOM_ID" "$SON"
     for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
       force_join "$ROOM_ID" "$CLAN_MEMBER"
     done
-    # Add everyone to Israel room
     force_join "$ISRAEL_ROOM_ID" "$SON"
     for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
       force_join "$ISRAEL_ROOM_ID" "$CLAN_MEMBER"
@@ -263,6 +261,8 @@ echo ""
 echo "Done."
 echo "  Superadmin : jacob@${DOMAIN}  (password: ChangeMeNow!)"
 echo "  Sons       : 12 tribes + clans, grouped under Israel > Tribe of X"
-echo "  Rooms      : #tribe-of-X and #israel — all members force-joined"
+echo "  Rooms      : #tribe-of-X and #israel created"
+echo "               Members will be joined automatically when they first log in,"
+echo "               or rerun this script after users have logged in to Element."
 echo ""
 echo "Change passwords at: https://auth.${DOMAIN}"
