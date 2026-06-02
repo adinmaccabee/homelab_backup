@@ -187,6 +187,7 @@ force_join() {
     err=$(echo "$result" | grep -o '"errcode":"[^"]*"' | cut -d'"' -f4)
     [ "$err" != "M_UNKNOWN" ] && [ "$err" != "M_FORBIDDEN" ] && echo "    Note: ${username} — ${err}" >&2
   fi
+  sleep 1
 }
 
 set_power_level() {
