@@ -152,10 +152,12 @@ get_room_id() {
 
 create_room() {
   local alias="$1" name="$2"
+  # Try to get existing room ID via Synapse admin API
   local existing
-  existing=$(curl -sk "https://matrix.${DOMAIN}/_matrix/client/v3/directory/room/%23${alias}:${DOMAIN}" \
+  existing=$(curl -sk \
+    "https://matrix.${DOMAIN}/_synapse/admin/v1/rooms?search_term=${alias}" \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" 2>/dev/null | \
-    grep -o '"room_id":"[^"]*"' | cut -d'"' -f4 || true)
+    grep -o '"room_id":"[^"]*"' | head -1 | cut -d'"' -f4 || true)
   if [ -n "$existing" ]; then
     echo "  Exists: #${alias}" >&2
     echo "$existing"
