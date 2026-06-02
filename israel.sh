@@ -180,15 +180,12 @@ create_room() {
 force_join() {
   local room_id="$1" username="$2"
   [ -z "$room_id" ] && return 0
-  # Issue a compatibility token to make Synapse aware of this MAS user
-  docker exec mas mas-cli manage issue-compatibility-token "$username" \
-    2>/dev/null | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
   local result err
   result=$(matrix_api POST "/_synapse/admin/v1/join/${room_id}" \
     "{\"user_id\":\"@${username}:${DOMAIN}\"}")
   if echo "$result" | grep -q '"errcode"'; then
     err=$(echo "$result" | grep -o '"errcode":"[^"]*"' | cut -d'"' -f4)
-    [ "$err" != "M_UNKNOWN" ] && echo "    Note: ${username} — ${err}" >&2
+    [ "$err" != "M_UNKNOWN" ] && [ "$err" != "M_FORBIDDEN" ] && echo "    Note: ${username} — ${err}" >&2
   fi
 }
 
@@ -219,7 +216,16 @@ for USER in $ALL_USERS; do
   docker exec mas mas-cli manage register-user --yes "$USER" 2>/dev/null || true
   printf "  %s\n" "$USER"
 done
-sleep 5
+
+# Issue compatibility tokens for all users to register them in Synapse
+echo ""
+echo "Registering all users in Synapse..."
+for USER in $ALL_USERS; do
+  docker exec mas mas-cli manage issue-compatibility-token "$USER" \
+    2>/dev/null | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
+done
+echo "Waiting for Synapse to process..."
+sleep 15
 
 # =============================================================================
 # 4. Create rooms and add members
@@ -242,6 +248,8 @@ TRIBE_CLANS[Joseph]="manasseh ephraim"
 TRIBE_CLANS[Benjamin]="bela beker ashbel gera naaman ehi rosh muppim huppim ard"
 
 ISRAEL_ROOM_ID=$(create_room "israel" "Israel")
+# Always join jacob to Israel room
+force_join "$ISRAEL_ROOM_ID" "jacob" || true
 
 for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Joseph Benjamin; do
   ALIAS="tribe-of-$(echo "$TRIBE" | tr '[:upper:]' '[:lower:]')"
@@ -249,6 +257,7 @@ for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Jo
   ROOM_ID=$(create_room "$ALIAS" "Tribe of ${TRIBE}")
 
   if [ -n "$ROOM_ID" ]; then
+    force_join "$ROOM_ID" "jacob" || true
     force_join "$ROOM_ID" "$SON" || true
     set_power_level "$ROOM_ID" "$SON" || true
     for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
