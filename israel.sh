@@ -180,12 +180,14 @@ create_room() {
 force_join() {
   local room_id="$1" username="$2"
   [ -z "$room_id" ] && return 0
+  # Issue a compatibility token to make Synapse aware of this MAS user
+  docker exec mas mas-cli manage issue-compatibility-token "$username" \
+    2>/dev/null | grep -o 'mct_[A-Za-z0-9_-]*' >/dev/null || true
   local result err
   result=$(matrix_api POST "/_synapse/admin/v1/join/${room_id}" \
     "{\"user_id\":\"@${username}:${DOMAIN}\"}")
   if echo "$result" | grep -q '"errcode"'; then
     err=$(echo "$result" | grep -o '"errcode":"[^"]*"' | cut -d'"' -f4)
-    # M_UNKNOWN = user doesn't exist yet in Matrix (hasn't logged in)
     [ "$err" != "M_UNKNOWN" ] && echo "    Note: ${username} — ${err}" >&2
   fi
 }
