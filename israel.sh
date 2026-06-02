@@ -199,7 +199,7 @@ force_join() {
   [ -z "$room_id" ] && return 0
   local result err
   result=$(matrix_api POST "/_synapse/admin/v1/join/${room_id}" \
-    "{\"user_id\":\"@${username}:${DOMAIN}\"}")
+    "{\"user_id\":\"@${username}:matrix.${DOMAIN}\"}")
   if echo "$result" | grep -q '"errcode"'; then
     err=$(echo "$result" | grep -o '"errcode":"[^"]*"' | cut -d'"' -f4)
     [ "$err" != "M_UNKNOWN" ] && [ "$err" != "M_FORBIDDEN" ] && echo "    Note: ${username} — ${err}" >&2
@@ -211,7 +211,7 @@ set_power_level() {
   local room_id="$1" son="$2"
   [ -z "$room_id" ] && return 0
   matrix_api PUT "/_matrix/client/v3/rooms/${room_id}/state/m.room.power_levels" \
-    "{\"users\":{\"@jacob:${DOMAIN}\":100,\"@${son}:${DOMAIN}\":100}}" >/dev/null 2>/dev/null || true
+    "{\"users\":{\"@jacob:matrix.${DOMAIN}\":100,\"@${son}:matrix.${DOMAIN}\":100}}" >/dev/null 2>/dev/null || true
 }
 
 # =============================================================================
