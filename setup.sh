@@ -7,14 +7,6 @@ sudo -v
 ( while true; do sudo -n true; sleep 50; done ) &
 SUDO_KEEPALIVE_PID=$!
 trap 'kill "$SUDO_KEEPALIVE_PID" 2>/dev/null || true' EXIT
-echo "Installing:"
-echo "  Docker"
-echo ""
-
-
-
-
-
 
 # download and install Mint-Y-Yaru theme
 wget -O /tmp/Mint-Y-Yaru.zip https://raw.githubusercontent.com/adinmaccabee/Mint-Y-Yaru/main/Mint-Y-Yaru.zip
@@ -113,22 +105,10 @@ data['custom-tooltip-format']['value'] = '%A, %B %e, %H:%M'
 with open(path, 'w') as f:
     json.dump(data, f, indent=4)
 "
-
-
-
 # install docker
 curl -fsSL https://get.docker.com | sudo sh && sudo usermod -aG docker $USER && newgrp docker
 
-
-
-
-
-
-
-# xrdp
-
-echo "Installing:"
-echo "  xrdp"
+# install xrdp
 
 # prompt for VM name
 read -p "VM name (run Get-VM in elevated PowerShell to list): " VMName
