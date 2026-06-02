@@ -114,14 +114,20 @@ if [ -z "$ADMIN_TOKEN" ]; then
   exit 1
 fi
 
-# Get jacob's token for room creation so jacob appears as creator
+# Get jacob's token — required for room creation so jacob is the creator
 JACOB_TOKEN=$(docker exec mas mas-cli manage issue-compatibility-token \
   --yes-i-want-to-grant-synapse-admin-privileges jacob 2>&1 | \
   grep -o 'mct_[A-Za-z0-9_-]*' | head -1 || true)
 
 if [ -z "$JACOB_TOKEN" ]; then
-  echo "  Jacob has no Matrix account yet — using admin token for room creation"
-  JACOB_TOKEN="$ADMIN_TOKEN"
+  echo ""
+  echo "Jacob has no Matrix account yet."
+  echo "Please log into Element as jacob first, then rerun this script."
+  echo ""
+  echo "Done (Authentik only)."
+  echo "  Superadmin : jacob@${DOMAIN}  (password: ChangeMeNow!)"
+  echo "  Change passwords at: https://auth.${DOMAIN}"
+  exit 0
 fi
 echo "  Token obtained."
 
@@ -181,7 +187,7 @@ create_room() {
   if [ -n "$room_id" ]; then
     echo "  Created: #${alias}" >&2
     echo "$room_id"
-    sleep 3
+    sleep 5
   else
     echo "  Failed: ${alias} — $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)" >&2
     echo ""
@@ -289,7 +295,7 @@ for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Jo
     force_join "$ISRAEL_ROOM_ID" "$CLAN_MEMBER" || true
   done
   echo "  Tribe of ${TRIBE} done"
-done
+done || true
 force_join "$ISRAEL_ROOM_ID" "jacob" || true
 
 echo ""
