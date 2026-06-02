@@ -152,7 +152,6 @@ get_room_id() {
 
 create_room() {
   local alias="$1" name="$2"
-  # Check if alias already exists
   local existing
   existing=$(curl -sk "https://matrix.${DOMAIN}/_matrix/client/v3/directory/room/%23${alias}:${DOMAIN}" \
     -H "Authorization: Bearer ${ADMIN_TOKEN}" 2>/dev/null | \
@@ -169,6 +168,7 @@ create_room() {
   if [ -n "$room_id" ]; then
     echo "  Created: #${alias}" >&2
     echo "$room_id"
+    sleep 3
   else
     echo "  Failed: ${alias} — $(echo "$result" | grep -o '"error":"[^"]*"' | cut -d'"' -f4)" >&2
     echo ""
@@ -245,15 +245,16 @@ for TRIBE in Reuben Simeon Levi Judah Dan Naphtali Gad Asher Issachar Zebulun Jo
   ROOM_ID=$(create_room "$ALIAS" "Tribe of ${TRIBE}")
 
   if [ -n "$ROOM_ID" ]; then
-    force_join "$ROOM_ID" "$SON"
-    set_power_level "$ROOM_ID" "$SON"
+    force_join "$ROOM_ID" "$SON" || true
+    set_power_level "$ROOM_ID" "$SON" || true
     for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
-      force_join "$ROOM_ID" "$CLAN_MEMBER"
+      force_join "$ROOM_ID" "$CLAN_MEMBER" || true
     done
-    force_join "$ISRAEL_ROOM_ID" "$SON"
+    force_join "$ISRAEL_ROOM_ID" "$SON" || true
     for CLAN_MEMBER in ${TRIBE_CLANS[$TRIBE]}; do
-      force_join "$ISRAEL_ROOM_ID" "$CLAN_MEMBER"
+      force_join "$ISRAEL_ROOM_ID" "$CLAN_MEMBER" || true
     done
+    sleep 2
   fi
 done
 
